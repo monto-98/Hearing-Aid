@@ -1,0 +1,190 @@
+package com.example.myapplication;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import android.content.pm.PackageManager;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.AudioTrack;
+import android.media.MediaRecorder;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.Window;
+import android.widget.Button;
+import android.widget.SeekBar;
+import android.widget.TextView;
+import android.widget.Toast;
+import static android.Manifest.permission.RECORD_AUDIO;
+
+public class Main2Activity extends AppCompatActivity {
+    private SeekBar seekbar;
+    private AudioManager audiomanager;
+    private TextView textview;
+    private Button startButton, stopButton;
+    public static final int RequestPermissionCode = 1;
+    private Thread aud;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getSupportActionBar().hide();
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        setContentView(R.layout.activity_main2);
+        startButton = (Button) findViewById(R.id.button);
+        stopButton = (Button) findViewById(R.id.button2);
+        textview = (TextView) findViewById(R.id.textview4);
+        seekbar = (SeekBar) findViewById(R.id.seekBar);
+        audiomanager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        Toast.makeText(this, "Second Page", Toast.LENGTH_SHORT).show();
+        stopButton.setEnabled(false);
+        startButton.setEnabled(true);
+        startButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (checkPermission()) {
+                    stopButton.setEnabled(true);
+                    startButton.setEnabled(false);
+                    record();
+                } else {
+                    requestPermission();
+                }
+            }
+        });
+        stopButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startButton.setEnabled(true);
+                stopButton.setEnabled(false);
+                close();
+            }
+        });
+        initcontrol();
+    }
+    private void requestPermission() {
+        ActivityCompat.requestPermissions(Main2Activity.this, new
+                String[]{RECORD_AUDIO}, RequestPermissionCode);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case RequestPermissionCode:
+                if (grantResults.length > 0) {
+                    boolean RecordPermission = grantResults[0] ==
+                            PackageManager.PERMISSION_GRANTED;
+
+                    if (RecordPermission) {
+                        Toast.makeText(Main2Activity.this, "Permission Granted",
+                                Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(Main2Activity.this, "Permission Denied", Toast.LENGTH_LONG).show();
+                    }
+                }
+                break;
+        }
+    }
+
+    public boolean checkPermission() {
+        int result1 = ContextCompat.checkSelfPermission(getApplicationContext(),
+                RECORD_AUDIO);
+        return result1 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            int vol = audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            audiomanager.setStreamVolume(AudioManager.STREAM_MUSIC, vol - 1, 0);
+            seekbar.setProgress(audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC));
+            textview.setText("Volume Level:" + seekbar.getProgress() + "");
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            int vol = audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            audiomanager.setStreamVolume(AudioManager.STREAM_MUSIC, vol + 1, 0);
+            seekbar.setProgress(audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC));
+            textview.setText("Volume Level:" + seekbar.getProgress() + "");
+            return true;
+        }
+        else {
+            return super.onKeyDown(keyCode, event);
+        }
+    }
+
+    private void initcontrol() {
+        try {
+            seekbar.setMax(audiomanager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            seekbar.setProgress(audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC));
+            textview.setText("Volume Level:" + seekbar.getProgress() + "");
+            seekbar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    audiomanager.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0);
+                    textview.setText("Volume Level:" + progress + "");
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void onResume() {
+        super.onResume();
+        seekbar.setProgress(audiomanager.getStreamVolume(AudioManager.STREAM_MUSIC));
+        textview.setText("Volume Level:" + seekbar.getProgress() + "");
+    }
+
+    private void  record() {
+        aud = new Thread() {
+                @Override
+            public void run() {
+                Log.i("Audio", "Running Audio Thread");
+                AudioRecord recorder = null;
+                AudioTrack track = null;
+                short[][] buffers = new short[256][160];
+                int ix = 0;
+                try {
+                    int N = AudioRecord.getMinBufferSize(8000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                    recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, 8000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, N * 10);
+                    track = new AudioTrack(AudioManager.STREAM_MUSIC, 8000,
+                            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, N * 10, AudioTrack.MODE_STREAM);
+                    recorder.startRecording();
+                    track.play();
+                    while (!interrupted()) {
+                        Log.i("Map", "Writing new data to buffer");
+                        short[] buffer = buffers[ix++ % buffers.length];
+                        N = recorder.read(buffer, 0, buffer.length);
+                        track.write(buffer, 0, buffer.length);
+                    }
+                } catch (Throwable x) {
+                    Log.w("Audio", "Error reading voice audio", x);
+                }
+                 finally {
+                    recorder.stop();
+                    recorder.release();
+                    track.stop();
+                    track.release();
+                }
+            }
+        };
+        aud.start();
+    }
+    private void close() {
+        aud.interrupt();
+    }
+}
+
